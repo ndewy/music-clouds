@@ -10,14 +10,6 @@ import cairo
 import pylast
 from PIL import Image, ImageTk
 
-# Use me to convert from index in selection box to actual time periods
-TIME_PERIODS = {"All Time": pylast.PERIOD_OVERALL,
-                "Last Week": pylast.PERIOD_7DAYS,
-                "Last Month": pylast.PERIOD_1MONTH,
-                "Last 3 Months": pylast.PERIOD_3MONTHS,
-                "Last 6 months": pylast.PERIOD_6MONTHS,
-                "Last Year": pylast.PERIOD_12MONTHS}
-
 
 class ImageWindow(tk.Toplevel):
     def __init__(self, image, master=None):
@@ -41,8 +33,7 @@ class ImageWindow(tk.Toplevel):
     def resize(self, event):
         new_width = self.winfo_width()
         new_height = self.winfo_height()
-        self.tkimage = ImageTk.PhotoImage(self.image.resize(
-            (new_width, new_height)))
+        self.tkimage = ImageTk.PhotoImage(self.image.resize((new_width, new_height)))
         self.label.config(image=self.tkimage)
         self.label.image = self.tkimage
 
@@ -62,24 +53,22 @@ class Application(tk.Frame):
 
         self.options["time"] = tk.StringVar()
         time_label = tk.Label(self, text="Time period:")
-        time_menu = tk.OptionMenu(self, self.options["time"],
-                                  *TIME_PERIODS.keys())
-        self.options["time"].set('All Time')
+        time_menu = tk.OptionMenu(self, self.options["time"], *TIME_PERIODS.keys())
+        self.options["time"].set("All Time")
 
         self.options["type"] = tk.StringVar()
         type_label = tk.Label(self, text="Select Graph type:")
-        type_menu = tk.OptionMenu(self, self.options["type"], "Artist", "Song")
+        type_menu = tk.OptionMenu(self, self.options["type"], *TYPE_FUNCTIONS.keys())
         self.options["type"].set("Artist")
-
-        create = tk.Button(self)
-        create["text"] = "Create"
-        create["command"] = self.generate
 
         self.options["limit"] = tk.StringVar()
         self.validate = self.master.register(self.integer_validate)
-        limit_input = tk.Entry(self, textvariable=self.options["limit"],
-                               validatecommand=(self.validate, '%S'),
-                               validate='key')
+        limit_input = tk.Entry(
+            self,
+            textvariable=self.options["limit"],
+            validatecommand=(self.validate, "%S"),
+            validate="key",
+        )
         limit_input.insert(0, "20")
         limit_label = tk.Label(self, text="Limit:")
 
@@ -87,6 +76,10 @@ class Application(tk.Frame):
         users_label = tk.Label(self, text="Username:")
         self.options["user"].set("ndewy")
         users_input = tk.Entry(self, textvariable=self.options["user"])
+
+        create = tk.Button(self)
+        create["text"] = "Create"
+        create["command"] = self.generate
 
         time_label.grid(column=0, row=0)
         time_menu.grid(column=1, row=0)
@@ -99,16 +92,19 @@ class Application(tk.Frame):
         create.grid(column=2, row=4)
 
     def generate(self):
-        params = {}
-        params["time"] = TIME_PERIODS[self.options["time"].get()]
-        params["user"] = self.options["user"].get()
+        params = {
+            "time": TIME_PERIODS[self.options["time"].get()],
+            "user": self.options["user"].get(),
+            "type": TYPE_FUNCTIONS[self.options["type"].get()],
+        }
+
         if self.options["limit"].get() == "":
             params["limit"] = 10
         else:
             params["limit"] = int(self.options["limit"].get())
-        t = threading.Thread(target=generate,
-                             args=(self.on_generated,
-                                   self.on_generating_fail, params))
+        t = threading.Thread(
+            target=generate, args=(self.on_generated, self.on_generating_fail, params)
+        )
         t.start()
 
     def on_generated(self, image_path):
@@ -126,7 +122,7 @@ WIDTH, HEIGHT = 2000, 1000
 MAX_FONT_SIZE = 150
 MIN_FONT_SIZE = 30
 BASE = 1.1
-STEPSIZE = pi/200
+STEPSIZE = pi / 200
 CURVE_MULTIPLIER = 1
 
 # endregion
@@ -141,13 +137,13 @@ network = pylast.LastFMNetwork(
 # endregion
 
 
-def get_spiral_coords(theta):
+def _get_spiral_coords(theta):
     x = ceil(CURVE_MULTIPLIER * theta * cos(theta)) + WIDTH / 2
     y = ceil(CURVE_MULTIPLIER * theta * sin(theta)) + HEIGHT / 2
     return x, y
 
 
-def choose_colour():
+def _choose_colour():
     # All colours must be atleast 0.5 to stop looking too dark
     while True:
         r = random.uniform(0.4, 1)
@@ -155,34 +151,52 @@ def choose_colour():
         b = random.uniform(0.4, 1)
         # However, we dont want to be pure white, or near to it, so we max the
         # sum to 2 (out of a maximum of 3).
-        if (r+g+b) < 2:
+        if (r + g + b) < 2:
             break
     return r, g, b
 
 
+def _get_albums(user, period, limit):
+    """ Returns parsed list of album names """
+
+    albums_raw = network.get_user(user).get_top_albums(period=period, limit=limit)
+    albums = [album.item.get_title() for album in albums_raw]
+    return albums
+
+
+def _get_artists(user, period, limit):
+    """ Returns parsed list of artist names """
+
+    artists_raw = network.get_user(user).get_top_artists(period=period, limit=limit)
+    artists = [artist.item.get_name() for artist in artists_raw]
+    return artists
+
+
+def _get_tracks(user, period, limit):
+    """ Returns parsed list of track names """
+
+    tracks_raw = network.get_user(user).get_top_tracks(period=period, limit=limit)
+    tracks = [track.item.get_name() for track in tracks_raw]
+    return tracks
+
+
 def generate(callback_success, callback_fail, parameters):
-    ''' Generates wordle'''
-    # region artists processing
+    """ Generates wordle"""
     try:
-        artists_raw = network.get_user(parameters["user"]).get_top_artists(
-         period=parameters["time"], limit=parameters["limit"])
+        items = parameters["type"](
+            parameters["user"], parameters["time"], parameters["limit"]
+        )
     except pylast.WSError as e:
         callback_fail(e)
         return
-    # Turn this into an array of artists sorted by plays
-    artists = []
-    for artist in artists_raw:
-        artists.append(str(artist.item))
 
     # Make font sizes follow negative exponential curve with base BASE
-    artist_sizes = []
-
-    for i, artist in enumerate(artists):
-        size = ceil(MAX_FONT_SIZE/(BASE**i))
+    font_sizes = []
+    for i, item in enumerate(items):
+        size = ceil(MAX_FONT_SIZE / (BASE ** i))
         if size <= MIN_FONT_SIZE:
             size = MIN_FONT_SIZE
-        artist_sizes.append((size, artist))
-    # endregion
+        font_sizes.append((size, item))
 
     # region Cairo Image processing
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, WIDTH, HEIGHT)
@@ -192,26 +206,25 @@ def generate(callback_success, callback_fail, parameters):
     ctx.fill()
     ctx.set_source_rgb(0, 0, 0)
     ctx.set_font_size(200)
-    ctx.select_font_face("Arial", cairo.FONT_SLANT_NORMAL,
-                         cairo.FONT_WEIGHT_NORMAL)
+    ctx.select_font_face("Arial", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
 
     # Generate text extents
     text_extents = []
-    for font_size, artist in artist_sizes:
+    for font_size, item in font_sizes:
         ctx.set_font_size(font_size)
-        text_extents.append(ctx.text_extents(artist))
+        text_extents.append(ctx.text_extents(item))
 
     rectangles = []
-    for i, (font_size, artist) in enumerate(artist_sizes):
+    for i, (font_size, item) in enumerate(font_sizes):
         theta = random.randint(0, 300)  # Choose a random start position
-        print(artist + "   " + str(font_size))
+        print(item + "   " + str(font_size))
         extent = text_extents[i]
 
         good_position = False  # you cannot have a good position until you are
         # colliding with nothing.
         while not good_position:
             # Collision Detection
-            ax1, ay2 = get_spiral_coords(theta)  # We get the bottom left
+            ax1, ay2 = _get_spiral_coords(theta)  # We get the bottom left
             # corner, so ay2 as y goes down here
             ax2 = ax1 + extent.width
             ay1 = ay2 - extent.height
@@ -224,8 +237,18 @@ def generate(callback_success, callback_fail, parameters):
                 by1 = rectangles[j][2]
                 by2 = rectangles[j][3]
 
-                x_colliding = ( bx1 <= ax1 and ax1 <= bx2) or (bx1 <= ax2 and ax2 <= bx2) or (ax1 <= bx1 and bx1 <= ax2) or (ax1 <= bx2 and bx2 <= ax2)
-                y_colliding = (by1 <= ay1 and ay1 <= by2) or (by1 <= ay2 and ay2 <= by2) or (ay1 <= by1 and by1 <= ay2) or (ay1 <= by2 and by2 <= ay2)
+                x_colliding = (
+                    (bx1 <= ax1 and ax1 <= bx2)
+                    or (bx1 <= ax2 and ax2 <= bx2)
+                    or (ax1 <= bx1 and bx1 <= ax2)
+                    or (ax1 <= bx2 and bx2 <= ax2)
+                )
+                y_colliding = (
+                    (by1 <= ay1 and ay1 <= by2)
+                    or (by1 <= ay2 and ay2 <= by2)
+                    or (ay1 <= by1 and by1 <= ay2)
+                    or (ay1 <= by2 and by2 <= ay2)
+                )
 
                 if x_colliding and y_colliding:
                     good_position = False
@@ -237,20 +260,33 @@ def generate(callback_success, callback_fail, parameters):
                 theta += STEPSIZE
 
         # Draw Text
-        x, y = get_spiral_coords(theta)
+        x, y = _get_spiral_coords(theta)
         ctx.move_to(x, y)
         ctx.set_font_size(font_size)
-        r, g, b = choose_colour()
+        r, g, b = _choose_colour()
         ctx.set_source_rgb(r, g, b)
-        ctx.show_text(artist)
+        ctx.show_text(item)
         # Add rectangle to rectangles
-        rectangles.append((x, x+extent.width, y-extent.height, y))
+        rectangles.append((x, x + extent.width, y - extent.height, y))
 
     image_data = io.BytesIO()
     surface.write_to_png(image_data)  # Output to PNG
     image = Image.open(image_data)
     callback_success(image)
 
+
+# region LOOKUP TABLES
+TIME_PERIODS = {
+    "All Time": pylast.PERIOD_OVERALL,
+    "Last Week": pylast.PERIOD_7DAYS,
+    "Last Month": pylast.PERIOD_1MONTH,
+    "Last 3 Months": pylast.PERIOD_3MONTHS,
+    "Last 6 months": pylast.PERIOD_6MONTHS,
+    "Last Year": pylast.PERIOD_12MONTHS,
+}
+
+TYPE_FUNCTIONS = {"Artist": _get_artists, "Album": _get_albums, "Song": _get_tracks}
+# endregion
 
 if __name__ == "__main__":
     root = tk.Tk()
