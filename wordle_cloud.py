@@ -3,6 +3,7 @@ import os
 import random
 import threading
 import tkinter as tk
+import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
 from math import ceil, cos, pi, sin
 
@@ -14,6 +15,12 @@ from PIL import Image, ImageTk
 class ImageWindow(tk.Toplevel):
     def __init__(self, image, master=None):
         super().__init__(master)
+        self.topmenu = tk.Menu(self)
+        self["menu"] = self.topmenu
+        self.filemenu = tk.Menu(self.topmenu,tearoff=0)
+        self.topmenu.add_cascade(label="File",menu=self.filemenu)
+        self.filemenu.add_command(label="Save As",command= self._save)
+
         self.resizable(width=False, height=False)
         self.image = image
         thumbnail = image.copy()
@@ -37,6 +44,11 @@ class ImageWindow(tk.Toplevel):
         self.label.config(image=self.tkimage)
         self.label.image = self.tkimage
 
+    def _save(self):
+        f = filedialog.asksaveasfile(mode="wb",parent=self,title="Save Picture",filetypes=[("PNG","*.png")],defaultextension='.png')
+
+        self.image.save(f,format="png")
+        f.close()
 
 class Application(tk.Frame):
     def __init__(self, master=None):
