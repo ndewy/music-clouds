@@ -17,9 +17,9 @@ class ImageWindow(tk.Toplevel):
         super().__init__(master)
         self.topmenu = tk.Menu(self)
         self["menu"] = self.topmenu
-        self.filemenu = tk.Menu(self.topmenu,tearoff=0)
-        self.topmenu.add_cascade(label="File",menu=self.filemenu)
-        self.filemenu.add_command(label="Save As",command= self._save)
+        self.filemenu = tk.Menu(self.topmenu, tearoff=0)
+        self.topmenu.add_cascade(label="File", menu=self.filemenu)
+        self.filemenu.add_command(label="Save As", command=self._save)
 
         self.resizable(width=False, height=False)
         self.image = image
@@ -45,10 +45,17 @@ class ImageWindow(tk.Toplevel):
         self.label.image = self.tkimage
 
     def _save(self):
-        f = filedialog.asksaveasfile(mode="wb",parent=self,title="Save Picture",filetypes=[("PNG","*.png")],defaultextension='.png')
+        f = filedialog.asksaveasfile(
+            mode="wb",
+            parent=self,
+            title="Save Picture",
+            filetypes=[("PNG", "*.png")],
+            defaultextension=".png",
+        )
 
-        self.image.save(f,format="png")
+        self.image.save(f, format="png")
         f.close()
+
 
 class Application(tk.Frame):
     def __init__(self, master=None):
@@ -234,14 +241,19 @@ def generate(callback_success, callback_fail, parameters):
 
         good_position = False  # you cannot have a good position until you are
         # colliding with nothing.
-        while not good_position:
-            # Collision Detection
-            ax1, ay2 = _get_spiral_coords(theta)  # We get the bottom left
-            # corner, so ay2 as y goes down here
+        while not good_position:  # Collision Detection
+
+            # Generate rectangle that we are trying to place
+            # Let top left of the text sit on the spiral
+            ax1, ay1 = _get_spiral_coords(theta)
+            # Make ax1,ay1 start from the bounding box, not the reference point
+            ax1 += extent.x_bearing
+            ay1 += extent.y_bearing
+            # The width and height represent the bounding box
             ax2 = ax1 + extent.width
-            ay1 = ay2 - extent.height
-            # First item will have no rectangles to compare against.
-            if i == 0:
+            ay2 = ay1 + extent.height
+
+            if i == 0:  # First item will have no rectangles to compare against.
                 good_position = True
             for j in range(0, len(rectangles)):
                 bx1 = rectangles[j][0]
@@ -271,15 +283,23 @@ def generate(callback_success, callback_fail, parameters):
             if not good_position:
                 theta += STEPSIZE
 
-        # Draw Text
-        x, y = _get_spiral_coords(theta)
+        # Turn correct bounding box coordinates into reference point coordinates in order to draw the text
+        x = ax1 - extent.x_bearing
+        y = ay1 - extent.y_bearing
+
+        # Draw text
         ctx.move_to(x, y)
         ctx.set_font_size(font_size)
         r, g, b = _choose_colour()
         ctx.set_source_rgb(r, g, b)
         ctx.show_text(item)
-        # Add rectangle to rectangles
-        rectangles.append((x, x + extent.width, y - extent.height, y))
+
+        # Draw text extent (debug)
+        # ctx.rectangle(ax1, ay1, extent.width, extent.height)
+        # ctx.stroke()
+        
+        # Add rectangle to list of drawn rectangles
+        rectangles.append((ax1, ax2, ay1, ay2))
 
     image_data = io.BytesIO()
     surface.write_to_png(image_data)  # Output to PNG
