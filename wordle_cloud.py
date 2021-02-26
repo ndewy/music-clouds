@@ -215,7 +215,7 @@ def generate(callback_success, callback_fail, parameters):
         size = ceil(MAX_FONT_SIZE / (BASE ** i))
         if size <= MIN_FONT_SIZE:
             size = MIN_FONT_SIZE
-        font_sizes.append((size, item))
+        font_sizes.append((item, size))
 
     # region Cairo Image processing
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, WIDTH, HEIGHT)
@@ -229,15 +229,21 @@ def generate(callback_success, callback_fail, parameters):
 
     # Generate text extents
     text_extents = []
-    for font_size, item in font_sizes:
+    for item, font_size in font_sizes:
         ctx.set_font_size(font_size)
         text_extents.append(ctx.text_extents(item))
 
+    # Combine words, font sizes, and extents into single object (so we can shuffle it later on)
+    words = [(font_sizes[i][0], font_sizes[i][1],text_extents[i]) for i in range(len(font_sizes))]
+    # Shuffle words to make placement of big words vs small words more random
+    # but, always place largest word in the centre
+    words = [words[0],*random.sample(words[1:],k=len(words)-1)]
+    random.shuffle(words)
+
     rectangles = []
-    for i, (font_size, item) in enumerate(font_sizes):
+    for (item,font_size,extent) in words:
         theta = random.randint(0, 300)  # Choose a random start position
         print(item + "   " + str(font_size))
-        extent = text_extents[i]
 
         good_position = False  # you cannot have a good position until you are
         # colliding with nothing.
@@ -253,7 +259,7 @@ def generate(callback_success, callback_fail, parameters):
             ax2 = ax1 + extent.width
             ay2 = ay1 + extent.height
 
-            if i == 0:  # First item will have no rectangles to compare against.
+            if len(rectangles) == 0:  # First item will have no rectangles to compare against.
                 good_position = True
             for j in range(0, len(rectangles)):
                 bx1 = rectangles[j][0]
