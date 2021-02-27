@@ -8,7 +8,7 @@ import tkinter.messagebox as messagebox
 from math import ceil, cos, floor, pi, sin
 
 import cairo
-import colorutils
+from colorutils import Color
 import pylast
 from PIL import Image, ImageTk
 
@@ -107,14 +107,16 @@ class Application(tk.Frame):
         limit_label = tk.Label(self, text="Limit:")
 
         self.options["font"] = tk.StringVar()
-        font_label = tk.Label(self,text="Font:")
+        font_label = tk.Label(self, text="Font:")
         self.options["font"].set("Impact")
-        font_input = tk.Entry(self,textvariable=self.options["font"])
+        font_input = tk.Entry(self, textvariable=self.options["font"])
 
-        self.options["all_caps"] =tk.BooleanVar()
-        self.options["bold"] =tk.BooleanVar()
-        allcaps_checkbox = tk.Checkbutton(self,text="Capitalised",variable=self.options["all_caps"])
-        bold_checkbox = tk.Checkbutton(self,text="Bold",variable=self.options["bold"])
+        self.options["all_caps"] = tk.BooleanVar()
+        self.options["bold"] = tk.BooleanVar()
+        allcaps_checkbox = tk.Checkbutton(
+            self, text="Capitalised", variable=self.options["all_caps"]
+        )
+        bold_checkbox = tk.Checkbutton(self, text="Bold", variable=self.options["bold"])
 
         self.options["user"] = tk.StringVar()
         users_label = tk.Label(self, text="Username:")
@@ -131,10 +133,10 @@ class Application(tk.Frame):
         type_menu.grid(column=1, row=1)
         limit_label.grid(column=0, row=2)
         limit_input.grid(column=1, row=2)
-        font_label.grid(column=0,row = 3)
-        font_input.grid(column=1,row = 3)
-        allcaps_checkbox.grid(column=0,row=4,sticky="W")
-        bold_checkbox.grid(column=0,row=5,sticky="W")
+        font_label.grid(column=0, row=3)
+        font_input.grid(column=1, row=3)
+        allcaps_checkbox.grid(column=0, row=4, sticky="W")
+        bold_checkbox.grid(column=0, row=5, sticky="W")
         users_label.grid(column=0, row=6)
         users_input.grid(column=1, row=6)
         create.grid(column=2, row=7)
@@ -153,11 +155,11 @@ class Application(tk.Frame):
             limit = int(self.options["limit"].get())
         t = threading.Thread(
             target=self._generate,
-            args=(item_func, limit, period, user, font,all_caps,bold),
+            args=(item_func, limit, period, user, font, all_caps, bold),
         )
         t.start()
 
-    def _generate(self, item_func, limit, period, user, font,all_caps,bold):
+    def _generate(self, item_func, limit, period, user, font, all_caps, bold):
         """Threaded wrapper function to generate_cloud().
 
         Intended to be run in a background thread.
@@ -168,7 +170,7 @@ class Application(tk.Frame):
         except pylast.WSError as e:
             self._on_generation_fail(e)
             return
-        image = generate_cloud(items,font,all_caps=all_caps,bold=bold)
+        image = generate_cloud(items, font, all_caps=all_caps, bold=bold)
         self._on_generation_success(image)
 
     def _on_generation_success(self, image):
@@ -187,17 +189,33 @@ def _get_spiral_coords(theta):
     return x, y
 
 
-def _choose_colour():
-    # All colours must be atleast 0.5 to stop looking too dark
-    while True:
-        r = random.uniform(0.4, 1)
-        g = random.uniform(0.4, 1)
-        b = random.uniform(0.4, 1)
-        # However, we dont want to be pure white, or near to it, so we max the
-        # sum to 2 (out of a maximum of 3).
-        if (r + g + b) < 2:
-            break
-    return r, g, b
+def _generate_colours(n, decay_base):
+    # Cycle through hues linearly
+    min_hue = 0  # Hue goes 0 -> 360 then loops around
+    # the loop around is implemented later
+    max_hue = 940
+    hue_step = (max_hue - min_hue) / n
+
+    # Decrease saturation exponentially
+    max_saturation = 1  # Saturation goes 0 -> 1
+    min_saturation = 0
+
+    brightness = 0.6  # Brigtness goes 0 (dark) -> 1 (light)
+
+    colours = []  # Array of rgb tuples
+    current_hue = max_hue
+    current_saturation = 0
+
+    for i in range(n):
+        current_hue = (current_hue + hue_step) % 360
+        # Saturation decays exponentially from max_sat -> min_sat
+        # This is shown interatively in geogebra file saturation_decay.gbb
+        current_saturation = (max_saturation - min_saturation) * decay_base ** (
+            -i
+        ) + min_saturation
+        colour = Color(hsv=(current_hue, current_saturation, brightness)).rgb
+        colours.append(colour)
+    return colours
 
 
 def _get_albums(user, period, limit):
@@ -229,14 +247,14 @@ MAX_FONT_SIZE = 150
 MIN_FONT_SIZE = 30
 BASE = 1.1
 STEPSIZE = pi / 200
-CURVE_MULTIPLIER = 1
+CURVE_MULTIPLIER = 0.6
 PAD_X = 5
 PAD_Y = 5
 
 # endregion
 
 
-def generate_cloud(items, font="Impact",all_caps=False,bold=False):
+def generate_cloud(items, font_half_lifefont="Impact", all_caps=False, bold=False):
     """Generates a word cloud.
 
     Generates a word cloud populated with the words specified.
@@ -251,7 +269,8 @@ def generate_cloud(items, font="Impact",all_caps=False,bold=False):
         An byte-like object containing a PNG image of the word cloud.
     """
     # Capitalise items.
-    if all_caps: items = [item.upper() for item in items]
+    if all_caps:
+        items = [item.upper() for item in items]
     # Make font sizes follow negative exponential curve with base BASE
     font_sizes = []
     for i, item in enumerate(items):
@@ -279,10 +298,12 @@ def generate_cloud(items, font="Impact",all_caps=False,bold=False):
         ctx.set_font_size(font_size)
         text_extents.append(ctx.text_extents(item))
 
-    # Combine words, font sizes, and extents into single object (so we can shuffle it later on)
+    # Generate colours
+    colours = _generate_colours(len(items),1.2)
+    # Combine words, font sizes, extents, and colours into single object (so we can shuffle it later on)
     words = [
-        (font_sizes[i][0], font_sizes[i][1], text_extents[i])
-        for i in range(len(font_sizes))
+        (font_sizes[i][0], font_sizes[i][1], text_extents[i], colours[i])
+        for i in range(len(items))
     ]
     # Shuffle words to make placement of big words vs small words more random
     # but, always place largest word in the centre
@@ -290,7 +311,7 @@ def generate_cloud(items, font="Impact",all_caps=False,bold=False):
     random.shuffle(words)
 
     rectangles = []
-    for (item, font_size, extent) in words:
+    for (item, font_size, extent,colour) in words:
         theta = random.randint(0, 300)  # Choose a random start position
         print(item + "   " + str(font_size))
 
@@ -347,8 +368,8 @@ def generate_cloud(items, font="Impact",all_caps=False,bold=False):
         # Draw text
         ctx.move_to(x, y)
         ctx.set_font_size(font_size)
-        r, g, b = _choose_colour()
-        ctx.set_source_rgb(r, g, b)
+        r, g, b = colour
+        ctx.set_source_rgb(r / 255, g / 255, b / 255)
         ctx.show_text(item)
 
         # Draw text extent (debug)
