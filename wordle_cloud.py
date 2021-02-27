@@ -213,6 +213,8 @@ MIN_FONT_SIZE = 30
 BASE = 1.1
 STEPSIZE = pi / 200
 CURVE_MULTIPLIER = 1
+PAD_X = 5
+PAD_Y = 5
 
 # endregion
 
@@ -276,11 +278,11 @@ def generate_cloud(items):
             # Let top left of the text sit on the spiral
             ax1, ay1 = _get_spiral_coords(theta)
             # Make ax1,ay1 start from the bounding box, not the reference point
-            ax1 += extent.x_bearing
-            ay1 += extent.y_bearing
+            ax1 += extent.x_bearing - PAD_X
+            ay1 += extent.y_bearing - PAD_Y
             # The width and height represent the bounding box
-            ax2 = ax1 + extent.width
-            ay2 = ay1 + extent.height
+            ax2 = ax1 + extent.width + PAD_X
+            ay2 = ay1 + extent.height + PAD_Y
 
             if (
                 len(rectangles) == 0
@@ -315,8 +317,8 @@ def generate_cloud(items):
                 theta += STEPSIZE
 
         # Turn correct bounding box coordinates into reference point coordinates in order to draw the text
-        x = ax1 - extent.x_bearing
-        y = ay1 - extent.y_bearing
+        x = ax1 - extent.x_bearing + PAD_X
+        y = ay1 - extent.y_bearing +PAD_Y
 
         # Draw text
         ctx.move_to(x, y)
