@@ -5,11 +5,11 @@ import threading
 import tkinter as tk
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
-from math import ceil, cos, floor, pi, sin
+from math import ceil, cos, exp, floor, pi, sin
 
 import cairo
-from colorutils import Color
 import pylast
+from colorutils import Color
 from PIL import Image, ImageTk
 
 # region LastFM Initialisation
@@ -165,12 +165,16 @@ class Application(tk.Frame):
         Intended to be run in a background thread.
         Wraps the generate_cloud() function with callbacks and LastFM fetching.
         """
+        # Half life proportion calculated from original base 1.1 with n = 20
+        half_life = 0.25 * limit  # Halves every 37%.
         try:
             items = item_func(user, period, limit)
         except pylast.WSError as e:
             self._on_generation_fail(e)
             return
-        image = generate_cloud(items, font, all_caps=all_caps, bold=bold)
+        image = generate_cloud(
+            items, half_life, 150, 30, font, all_caps=all_caps, bold=bold
+        )
         self._on_generation_success(image)
 
     def _on_generation_success(self, image):
@@ -254,13 +258,24 @@ PAD_Y = 5
 # endregion
 
 
-def generate_cloud(items, font_half_lifefont="Impact", all_caps=False, bold=False):
+def generate_cloud(
+    items,
+    half_life,
+    max_font_size,
+    min_font_size,
+    font="Impact",
+    all_caps=False,
+    bold=False,
+):
     """Generates a word cloud.
 
     Generates a word cloud populated with the words specified.
 
     Args:
         items: The words to populate the cloud with.
+        half_life: The amount of items it takes for the font size to half.
+        max_font_size: The maximum font size.
+        min_font_size: The minimum font size
         font: default: Impact. The font to use. If the font given is invalid, this defaults to Arial.
         all_caps: default: True. A boolean representing whether each word should be fully UPPER CASE or Standard Case.
         bold: default: False. A boolean representing whether a font should be in bold.
@@ -271,12 +286,15 @@ def generate_cloud(items, font_half_lifefont="Impact", all_caps=False, bold=Fals
     # Capitalise items.
     if all_caps:
         items = [item.upper() for item in items]
-    # Make font sizes follow negative exponential curve with base BASE
+
+    # Make font sizes follow negative exponential curve.
+    # Calculate decay constant from half_life
+    decay_constant = 0.69314718 / half_life
     font_sizes = []
     for i, item in enumerate(items):
-        size = ceil(MAX_FONT_SIZE / (BASE ** i))
-        if size <= MIN_FONT_SIZE:
-            size = MIN_FONT_SIZE
+        size = (max_font_size - min_font_size) * exp(
+            -decay_constant * i
+        ) + min_font_size
         font_sizes.append((item, size))
 
     # region Cairo Image processing
@@ -299,7 +317,7 @@ def generate_cloud(items, font_half_lifefont="Impact", all_caps=False, bold=Fals
         text_extents.append(ctx.text_extents(item))
 
     # Generate colours
-    colours = _generate_colours(len(items),1.2)
+    colours = _generate_colours(len(items), 1.2)
     # Combine words, font sizes, extents, and colours into single object (so we can shuffle it later on)
     words = [
         (font_sizes[i][0], font_sizes[i][1], text_extents[i], colours[i])
@@ -311,7 +329,7 @@ def generate_cloud(items, font_half_lifefont="Impact", all_caps=False, bold=Fals
     random.shuffle(words)
 
     rectangles = []
-    for (item, font_size, extent,colour) in words:
+    for (item, font_size, extent, colour) in words:
         theta = random.randint(0, 300)  # Choose a random start position
         print(item + "   " + str(font_size))
 
