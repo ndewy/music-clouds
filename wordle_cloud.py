@@ -5,9 +5,10 @@ import threading
 import tkinter as tk
 import tkinter.filedialog as filedialog
 import tkinter.messagebox as messagebox
-from math import ceil, cos, pi, sin
+from math import ceil, cos, floor, pi, sin
 
 import cairo
+import colorutils
 import pylast
 from PIL import Image, ImageTk
 
@@ -105,6 +106,16 @@ class Application(tk.Frame):
         limit_input.insert(0, "20")
         limit_label = tk.Label(self, text="Limit:")
 
+        self.options["font"] = tk.StringVar()
+        font_label = tk.Label(self,text="Font:")
+        self.options["font"].set("Impact")
+        font_input = tk.Entry(self,textvariable=self.options["font"])
+
+        self.options["all_caps"] =tk.BooleanVar()
+        self.options["bold"] =tk.BooleanVar()
+        allcaps_checkbox = tk.Checkbutton(self,text="Capitalised",variable=self.options["all_caps"])
+        bold_checkbox = tk.Checkbutton(self,text="Bold",variable=self.options["bold"])
+
         self.options["user"] = tk.StringVar()
         users_label = tk.Label(self, text="Username:")
         self.options["user"].set("ndewy")
@@ -120,26 +131,33 @@ class Application(tk.Frame):
         type_menu.grid(column=1, row=1)
         limit_label.grid(column=0, row=2)
         limit_input.grid(column=1, row=2)
-        users_label.grid(column=0, row=3)
-        users_input.grid(column=1, row=3)
-        create.grid(column=2, row=4)
+        font_label.grid(column=0,row = 3)
+        font_input.grid(column=1,row = 3)
+        allcaps_checkbox.grid(column=0,row=4,sticky="W")
+        bold_checkbox.grid(column=0,row=5,sticky="W")
+        users_label.grid(column=0, row=6)
+        users_input.grid(column=1, row=6)
+        create.grid(column=2, row=7)
 
     def _on_create(self):
         period = TIME_PERIODS[self.options["time"].get()]
         user = self.options["user"].get()
         item_func = ITEM_FUNCTIONS[self.options["type"].get()]
-
+        font = self.options["font"].get()
+        all_caps = self.options["all_caps"].get()
+        bold = self.options["bold"].get()
+        5
         if self.options["limit"].get() == "":
             limit = 10
         else:
             limit = int(self.options["limit"].get())
         t = threading.Thread(
             target=self._generate,
-            args=(item_func, limit, period, user),
+            args=(item_func, limit, period, user, font,all_caps,bold),
         )
         t.start()
 
-    def _generate(self, item_func, limit, period, user):
+    def _generate(self, item_func, limit, period, user, font,all_caps,bold):
         """Threaded wrapper function to generate_cloud().
 
         Intended to be run in a background thread.
@@ -150,8 +168,7 @@ class Application(tk.Frame):
         except pylast.WSError as e:
             self._on_generation_fail(e)
             return
-
-        image = generate_cloud(items)
+        image = generate_cloud(items,font,all_caps=all_caps,bold=bold)
         self._on_generation_success(image)
 
     def _on_generation_success(self, image):
@@ -219,18 +236,22 @@ PAD_Y = 5
 # endregion
 
 
-def generate_cloud(items):
+def generate_cloud(items, font="Impact",all_caps=False,bold=False):
     """Generates a word cloud.
 
-    Generates a word cloud populated with the words fed in.
+    Generates a word cloud populated with the words specified.
 
     Args:
         items: The words to populate the cloud with.
+        font: default: Impact. The font to use. If the font given is invalid, this defaults to Arial.
+        all_caps: default: True. A boolean representing whether each word should be fully UPPER CASE or Standard Case.
+        bold: default: False. A boolean representing whether a font should be in bold.
 
     Returns:
         An byte-like object containing a PNG image of the word cloud.
     """
-
+    # Capitalise items.
+    if all_caps: items = [item.upper() for item in items]
     # Make font sizes follow negative exponential curve with base BASE
     font_sizes = []
     for i, item in enumerate(items):
@@ -247,7 +268,10 @@ def generate_cloud(items):
     ctx.fill()
     ctx.set_source_rgb(0, 0, 0)
     ctx.set_font_size(200)
-    ctx.select_font_face("Arial", cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
+    font_weight = cairo.FONT_WEIGHT_NORMAL
+    if bold:
+        font_weight = cairo.FONT_WEIGHT_BOLD
+    ctx.select_font_face(font, cairo.FONT_SLANT_NORMAL, font_weight)
 
     # Generate text extents
     text_extents = []
@@ -318,7 +342,7 @@ def generate_cloud(items):
 
         # Turn correct bounding box coordinates into reference point coordinates in order to draw the text
         x = ax1 - extent.x_bearing + PAD_X
-        y = ay1 - extent.y_bearing +PAD_Y
+        y = ay1 - extent.y_bearing + PAD_Y
 
         # Draw text
         ctx.move_to(x, y)
