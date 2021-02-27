@@ -188,8 +188,8 @@ class Application(tk.Frame):
 
 
 def _get_spiral_coords(theta):
-    x = ceil(CURVE_MULTIPLIER * theta * cos(theta)) + WIDTH / 2
-    y = ceil(CURVE_MULTIPLIER * theta * sin(theta)) + HEIGHT / 2
+    x = ceil(CURVE_MULTIPLIER * theta * cos(theta)) + 8000 / 2
+    y = ceil(CURVE_MULTIPLIER * theta * sin(theta)) + 8000 / 2
     return x, y
 
 
@@ -298,13 +298,13 @@ def generate_cloud(
         font_sizes.append((item, size))
 
     # region Cairo Image processing
-    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, WIDTH, HEIGHT)
+    surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 8000, 8000)
     ctx = cairo.Context(surface)
-    ctx.rectangle(0, 0, WIDTH, HEIGHT)
-    ctx.set_source_rgb(1, 1, 1)
-    ctx.fill()
-    ctx.set_source_rgb(0, 0, 0)
-    ctx.set_font_size(200)
+    # ctx.rectangle(0, 0, 8000, 8000)
+    # ctx.set_source_rgb(1, 1, 1)
+    # ctx.fill()
+    # ctx.set_source_rgb(0, 0, 0)
+    # ctx.set_font_size(200)
     font_weight = cairo.FONT_WEIGHT_NORMAL
     if bold:
         font_weight = cairo.FONT_WEIGHT_BOLD
@@ -330,7 +330,9 @@ def generate_cloud(
 
     rectangles = []
     for (item, font_size, extent, colour) in words:
-        theta = random.randint(0, 300)  # Choose a random start position
+        theta = random.randint(
+            0, 300 * (len(items) / 20)
+        )  # Choose a random start position
         print(item + "   " + str(font_size))
 
         good_position = False  # you cannot have a good position until you are
@@ -400,7 +402,8 @@ def generate_cloud(
     image_data = io.BytesIO()
     surface.write_to_png(image_data)  # Output to PNG
     image = Image.open(image_data)
-    return image
+    image_cropped = image.crop(image.getbbox())
+    return image_cropped
 
 
 # region LOOKUP TABLES
