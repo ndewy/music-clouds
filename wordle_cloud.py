@@ -11,8 +11,20 @@ import cairo
 import pylast
 from PIL import Image, ImageTk
 
+# region LastFM Initialisation
+API_KEY = os.environ.get("LASTFM_API_KEY")
+API_SECRET = os.environ.get("LASTFM_API_SECRET")
+
+network = pylast.LastFMNetwork(
+    api_key=API_KEY,
+    api_secret=API_SECRET,
+)
+# endregion
+
 
 class ImageWindow(tk.Toplevel):
+    """A sub-window to display and save images."""
+
     def __init__(self, image, master=None):
         super().__init__(master)
         self.topmenu = tk.Menu(self)
@@ -27,9 +39,9 @@ class ImageWindow(tk.Toplevel):
         thumbnail.thumbnail((500, 500))
         self.tkimage = ImageTk.PhotoImage(thumbnail)
         self.master = master
-        self.create_widgets()
+        self._create_widgets()
 
-    def create_widgets(self):
+    def _create_widgets(self):
         self.label = tk.Label(self, image=self.tkimage)
         # self.label.bind('<Configure>', self.resize)
         self.label.pack()
@@ -37,7 +49,7 @@ class ImageWindow(tk.Toplevel):
     def report_callback_exception(self, *args):
         self.destroy()
 
-    def resize(self, event):
+    def _handle_resizing(self, event):
         new_width = self.winfo_width()
         new_height = self.winfo_height()
         self.tkimage = ImageTk.PhotoImage(self.image.resize((new_width, new_height)))
@@ -58,16 +70,18 @@ class ImageWindow(tk.Toplevel):
 
 
 class Application(tk.Frame):
+    """ Main Application class"""
+
     def __init__(self, master=None):
         super().__init__(master)
         self.master = master
         self.master.title("LastFM")
         self.pack()
-        self.create_widgets()
+        self._create_widgets()
 
         self.master.resizable(width=False, height=False)
 
-    def create_widgets(self):
+    def _create_widgets(self):
         self.options = {}
 
         self.options["time"] = tk.StringVar()
@@ -77,11 +91,11 @@ class Application(tk.Frame):
 
         self.options["type"] = tk.StringVar()
         type_label = tk.Label(self, text="Select Graph type:")
-        type_menu = tk.OptionMenu(self, self.options["type"], *TYPE_FUNCTIONS.keys())
+        type_menu = tk.OptionMenu(self, self.options["type"], *ITEM_FUNCTIONS.keys())
         self.options["type"].set("Artist")
 
         self.options["limit"] = tk.StringVar()
-        self.validate = self.master.register(self.integer_validate)
+        self.validate = self.master.register(self._is_number)
         limit_input = tk.Entry(
             self,
             textvariable=self.options["limit"],
@@ -98,7 +112,7 @@ class Application(tk.Frame):
 
         create = tk.Button(self)
         create["text"] = "Create"
-        create["command"] = self.generate
+        create["command"] = self._on_create
 
         time_label.grid(column=0, row=0)
         time_menu.grid(column=1, row=0)
@@ -110,50 +124,44 @@ class Application(tk.Frame):
         users_input.grid(column=1, row=3)
         create.grid(column=2, row=4)
 
-    def generate(self):
-        params = {
-            "time": TIME_PERIODS[self.options["time"].get()],
-            "user": self.options["user"].get(),
-            "type": TYPE_FUNCTIONS[self.options["type"].get()],
-        }
+    def _on_create(self):
+        period = TIME_PERIODS[self.options["time"].get()]
+        user = self.options["user"].get()
+        item_func = ITEM_FUNCTIONS[self.options["type"].get()]
 
         if self.options["limit"].get() == "":
-            params["limit"] = 10
+            limit = 10
         else:
-            params["limit"] = int(self.options["limit"].get())
+            limit = int(self.options["limit"].get())
         t = threading.Thread(
-            target=generate, args=(self.on_generated, self.on_generating_fail, params)
+            target=self._generate,
+            args=(item_func, limit, period, user),
         )
         t.start()
 
-    def on_generated(self, image_path):
-        ImageWindow(image_path, master=self)
+    def _generate(self, item_func, limit, period, user):
+        """Threaded wrapper function to generate_cloud().
 
-    def on_generating_fail(self, msg):
+        Intended to be run in a background thread.
+        Wraps the generate_cloud() function with callbacks and LastFM fetching.
+        """
+        try:
+            items = item_func(user, period, limit)
+        except pylast.WSError as e:
+            self._on_generation_fail(e)
+            return
+
+        image = generate_cloud(items)
+        self._on_generation_success(image)
+
+    def _on_generation_success(self, image):
+        ImageWindow(image, master=self)
+
+    def _on_generation_fail(self, msg):
         messagebox.showerror("Generation Failed", str(msg))
 
-    def integer_validate(self, char):
+    def _is_number(self, char):
         return char.isdigit()
-
-
-# region Parameters
-WIDTH, HEIGHT = 2000, 1000
-MAX_FONT_SIZE = 150
-MIN_FONT_SIZE = 30
-BASE = 1.1
-STEPSIZE = pi / 200
-CURVE_MULTIPLIER = 1
-
-# endregion
-# region LastFM stuff
-API_KEY = os.environ.get("LASTFM_API_KEY")
-API_SECRET = os.environ.get("LASTFM_API_SECRET")
-
-network = pylast.LastFMNetwork(
-    api_key=API_KEY,
-    api_secret=API_SECRET,
-)
-# endregion
 
 
 def _get_spiral_coords(theta):
@@ -192,22 +200,34 @@ def _get_artists(user, period, limit):
 
 
 def _get_tracks(user, period, limit):
-    """ Returns parsed list of track names """
 
     tracks_raw = network.get_user(user).get_top_tracks(period=period, limit=limit)
     tracks = [track.item.get_name() for track in tracks_raw]
     return tracks
 
 
-def generate(callback_success, callback_fail, parameters):
-    """ Generates wordle"""
-    try:
-        items = parameters["type"](
-            parameters["user"], parameters["time"], parameters["limit"]
-        )
-    except pylast.WSError as e:
-        callback_fail(e)
-        return
+# region Parameters
+WIDTH, HEIGHT = 2000, 1000
+MAX_FONT_SIZE = 150
+MIN_FONT_SIZE = 30
+BASE = 1.1
+STEPSIZE = pi / 200
+CURVE_MULTIPLIER = 1
+
+# endregion
+
+
+def generate_cloud(items):
+    """Generates a word cloud.
+
+    Generates a word cloud populated with the words fed in.
+
+    Args:
+        items: The words to populate the cloud with.
+
+    Returns:
+        An byte-like object containing a PNG image of the word cloud.
+    """
 
     # Make font sizes follow negative exponential curve with base BASE
     font_sizes = []
@@ -234,14 +254,17 @@ def generate(callback_success, callback_fail, parameters):
         text_extents.append(ctx.text_extents(item))
 
     # Combine words, font sizes, and extents into single object (so we can shuffle it later on)
-    words = [(font_sizes[i][0], font_sizes[i][1],text_extents[i]) for i in range(len(font_sizes))]
+    words = [
+        (font_sizes[i][0], font_sizes[i][1], text_extents[i])
+        for i in range(len(font_sizes))
+    ]
     # Shuffle words to make placement of big words vs small words more random
     # but, always place largest word in the centre
-    words = [words[0],*random.sample(words[1:],k=len(words)-1)]
+    words = [words[0], *random.sample(words[1:], k=len(words) - 1)]
     random.shuffle(words)
 
     rectangles = []
-    for (item,font_size,extent) in words:
+    for (item, font_size, extent) in words:
         theta = random.randint(0, 300)  # Choose a random start position
         print(item + "   " + str(font_size))
 
@@ -259,7 +282,9 @@ def generate(callback_success, callback_fail, parameters):
             ax2 = ax1 + extent.width
             ay2 = ay1 + extent.height
 
-            if len(rectangles) == 0:  # First item will have no rectangles to compare against.
+            if (
+                len(rectangles) == 0
+            ):  # First item will have no rectangles to compare against.
                 good_position = True
             for j in range(0, len(rectangles)):
                 bx1 = rectangles[j][0]
@@ -303,14 +328,14 @@ def generate(callback_success, callback_fail, parameters):
         # Draw text extent (debug)
         # ctx.rectangle(ax1, ay1, extent.width, extent.height)
         # ctx.stroke()
-        
+
         # Add rectangle to list of drawn rectangles
         rectangles.append((ax1, ax2, ay1, ay2))
 
     image_data = io.BytesIO()
     surface.write_to_png(image_data)  # Output to PNG
     image = Image.open(image_data)
-    callback_success(image)
+    return image
 
 
 # region LOOKUP TABLES
@@ -323,7 +348,9 @@ TIME_PERIODS = {
     "Last Year": pylast.PERIOD_12MONTHS,
 }
 
-TYPE_FUNCTIONS = {"Artist": _get_artists, "Album": _get_albums, "Song": _get_tracks}
+# Functions used to populate words variables, depending on choice in the UI.
+ITEM_FUNCTIONS = {"Artist": _get_artists, "Album": _get_albums, "Song": _get_tracks}
+
 # endregion
 
 if __name__ == "__main__":
