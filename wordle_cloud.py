@@ -193,7 +193,14 @@ def _get_spiral_coords(theta):
     return x, y
 
 
-def _generate_colours(n, decay_base):
+def _generate_exponential_decay(n, half_life, maximum, minimum):
+    # Calculate decay constant from half_life
+    decay_constant = 0.69314718 / half_life
+    decay = lambda x: (maximum - minimum) * exp(-decay_constant * x) + minimum
+    return [decay(i) for i in range(n)]
+
+
+def _generate_colours(n, half_life):
     # Cycle through hues linearly
     min_hue = 0  # Hue goes 0 -> 360 then loops around
     # the loop around is implemented later
@@ -201,23 +208,19 @@ def _generate_colours(n, decay_base):
     hue_step = (max_hue - min_hue) / n
 
     # Decrease saturation exponentially
-    max_saturation = 1  # Saturation goes 0 -> 1
+    max_saturation = 0.6  # Saturation goes 0 -> 1
     min_saturation = 0
+    saturation_values = _generate_exponential_decay(n,half_life,max_saturation,min_saturation)
 
     brightness = 0.6  # Brigtness goes 0 (dark) -> 1 (light)
 
     colours = []  # Array of rgb tuples
     current_hue = max_hue
-    current_saturation = 0
-
     for i in range(n):
         current_hue = (current_hue + hue_step) % 360
         # Saturation decays exponentially from max_sat -> min_sat
         # This is shown interatively in geogebra file saturation_decay.gbb
-        current_saturation = (max_saturation - min_saturation) * decay_base ** (
-            -i
-        ) + min_saturation
-        colour = Color(hsv=(current_hue, current_saturation, brightness)).rgb
+        colour = Color(hsv=(current_hue, saturation_values[i], brightness)).rgb
         colours.append(colour)
     return colours
 
@@ -246,11 +249,8 @@ def _get_tracks(user, period, limit):
 
 
 # region Parameters
-WIDTH, HEIGHT = 2000, 1000
-MAX_FONT_SIZE = 150
-MIN_FONT_SIZE = 30
 BASE = 1.1
-STEPSIZE = pi / 200
+STEPSIZE = pi / 400
 CURVE_MULTIPLIER = 0.6
 PAD_X = 5
 PAD_Y = 5
@@ -289,13 +289,10 @@ def generate_cloud(
 
     # Make font sizes follow negative exponential curve.
     # Calculate decay constant from half_life
-    decay_constant = 0.69314718 / half_life
-    font_sizes = []
-    for i, item in enumerate(items):
-        size = (max_font_size - min_font_size) * exp(
-            -decay_constant * i
-        ) + min_font_size
-        font_sizes.append((item, size))
+    sizes = _generate_exponential_decay(
+        len(items), half_life, max_font_size, min_font_size
+    )
+    font_sizes = [(items[i], sizes[i]) for i in range(len(items))]
 
     # region Cairo Image processing
     surface = cairo.ImageSurface(cairo.FORMAT_ARGB32, 8000, 8000)
@@ -317,7 +314,7 @@ def generate_cloud(
         text_extents.append(ctx.text_extents(item))
 
     # Generate colours
-    colours = _generate_colours(len(items), 1.2)
+    colours = _generate_colours(len(items), 0.25*len(items))
     # Combine words, font sizes, extents, and colours into single object (so we can shuffle it later on)
     words = [
         (font_sizes[i][0], font_sizes[i][1], text_extents[i], colours[i])
